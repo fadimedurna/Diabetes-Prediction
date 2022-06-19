@@ -1,0 +1,659 @@
+---
+title: "SC-Project"
+output: html_document
+date: '2022-06-07'
+---
+## 1.Data
+### **Diabetes Dataset**
+**Context**
+
+>This dataset is originally from the National Institute of Diabetes and Digestive and Kidney Diseases. The objective is to predict based on diagnostic measurements whether a patient has diabetes. Link: https://www.kaggle.com/datasets/mathchi/diabetes-data-set
+
+**Content**
+
+>Several constraints were placed on the selection of these instances from a larger database. In particular, all patients here are females at least 21 years old of Pima Indian heritage.
+
+- Pregnancies: Number of times pregnant
+
+- Glucose: Plasma glucose concentration a 2 hours in an oral glucose tolerance test
+
+- BloodPressure: Diastolic blood pressure (mm Hg)
+
+- SkinThickness: Triceps skin fold thickness (mm)
+
+- Insulin: 2-Hour serum insulin (mu U/ml)
+
+- BMI: Body mass index (weight in kg/(height in m)^2)
+
+- DiabetesPedigreeFunction: Diabetes pedigree function
+
+- Age: Age (years)
+
+- Outcome: Class variable (0 or 1)
+
+Several constraints were placed on the selection of these instances from a larger database.  In particular, all patients here are females at least 21 years old of Pima Indian heritage.
+
+**Details**
+
+> Number of Instances: 768 |
+  Number of Attributes: 8 plus class |
+  For Each Attribute: (all numeric-valued)
+  
+  - Number of times pregnant
+  
+  - Plasma glucose concentration a 2 hours in an oral glucose tolerance test
+  
+  - Diastolic blood pressure (mm Hg)
+  
+  - Triceps skin fold thickness (mm)
+  
+  - 2-Hour serum insulin (mu U/ml): (mu Uracil/ml)
+  
+  - Body mass index (weight in kg/(height in m)^2)
+  
+  - Diabetes pedigree function
+  
+  - Age (years)
+  
+  - Class variable (0 or 1)
+  
+  Missing Attribute Values: Yes
+  
+  Class Distribution: (class value 1 is interpreted as "tested positive for diabetes")
+ 
+```{r}
+library(readr)
+library(stats)
+library(tidyverse)
+
+#import your .csv file to your Global Environment
+diabetes_dataset <- read.csv("diabetes.csv", header = TRUE, sep= ",") #.csv as df
+head(diabetes_dataset)
+
+#adding ID column
+diabetes_dataset <- tibble::rowid_to_column(diabetes_dataset, "ID")
+```
+## 2.Exploratory and descriptive data analysis:
+
+Including ID column, 8 of them are integer and 2 of them are numeric variables. 
+
+Here's a summary of the variables:
+
+ name    | variable type 
+------------------------------|---------------------------------
+Pregnancies | numerical, quantitative, discrete
+Glucose	| numerical, quantitative, discrete
+BloodPressure	  | numerical, quantitative, continuous
+SkinThickness | numerical, quantitative, discrete
+Insulin	| numerical, quantitative, discrete
+BMI	| numerical, quantitative, continuous
+DiabetesPedigreeFunction	| numerical, quantitative, continuous
+Age |	numerical, quantitative, continuous
+Outcome	| numerical - int
+
+
+```{r}
+str(diabetes_dataset)
+diabetes_dataset %>% count(Outcome)
+```
+## 3.Data Visualization:
+
+### Converting numerical data to cathegorical:
+
+Need to define how we want to parse the data into buckets. The first decision is to decide the number of buckets. The second decision is to decide how to allocate the data into the buckets.
+
+```{r}
+#First looking at the variable that going to be arrange as cathegorical in histogram and summary of it
+
+hist(diabetes_dataset$Pregnancies)
+summary(diabetes_dataset$Pregnancies)
+
+```
+```{r}
+#define the new categorical variables : Pregnancies.cat and Outcome.cat
+diabetes_dataset <- within(diabetes_dataset, {   
+  Pregnancies.cat <- NA # need to initialize variable
+  Pregnancies.cat[Pregnancies < 2] <- "Low"
+  Pregnancies.cat[Pregnancies >= 2 & Pregnancies < 4] <- "Normal"
+  Pregnancies.cat[Pregnancies >= 4] <- "High"
+   } )
+
+diabetes_dataset <- within(diabetes_dataset, {   
+  Outcome.cat <- NA # need to initialize variable
+  Outcome.cat[Outcome == 1] <- "1"
+  Outcome.cat[Outcome == 0] <- "0"
+   } )
+
+#for two hour after the glucose tolerance test, blood glucose level is lower than 155 mg/dL-decilitre
+diabetes_dataset <- within(diabetes_dataset, {   
+  Glucose.cat <- NA # need to initialize variable
+  Glucose.cat[Glucose < 155] <- "1" #normal
+  Glucose.cat[Glucose >= 155] <- "0" #abnormal
+   } )
+
+```
+
+```{r}
+#The converting to the factor variable 
+
+diabetes_dataset$Pregnancies.cat <- factor(diabetes_dataset$Pregnancies.cat, levels = c("High", "Normal", "Low"))
+diabetes_dataset$Outcome.cat <- factor(diabetes_dataset$Outcome.cat, levels = c("1", "0"))
+diabetes_dataset$Glucose.cat <- factor(diabetes_dataset$Outcome.cat, levels = c("1", "0"))
+ 
+str(diabetes_dataset)
+```
+
+```{r}
+library(lessR)
+#Barchart visualization with pregnancies by outcome 
+BarChart(Pregnancies.cat, data=diabetes_dataset, by1 = Outcome) #Pregnancies by outcome
+
+```
+
+```{r}
+#PieChart with Outcome categorical
+PieChart(Outcome.cat, data= diabetes_dataset)
+
+```
+
+- In LessR Plot is a general function which includes violin plot, box plot and scatter plot (which are individual cases beyond the whiskers, they might be outliers). Also we can see the mean, median, sd and outlier outcomes. The graph looks skewed right data distribution.
+
+```{r}
+#continuous variable: interval or ratio measurement scales
+Plot(DiabetesPedigreeFunction, data= diabetes_dataset, by1 = Outcome.cat)
+
+```
+## 4.Central Limit Theorem:
+
+- As we plot the frequency distribution of skin thickness, we can see that it is not normally distributed.
+
+```{r, fig.align='center', fig.width = 10, fig.height = 4}
+summary(diabetes_dataset$SkinThickness)
+par(mfrow=c(1, 1))
+num_breaks = seq(0.00, max(diabetes_dataset$SkinThickness))
+hist(diabetes_dataset$SkinThickness, breaks = num_breaks, main = "Triceps skin fold thickness (mm)", xlab = "skin thickness")
+```
+
+- According to the Central Limit Theorem, when repeatedly take samples from this distribution then the frequency distribution of the sample means will be normally distributed. 
+
+- The plot.sample.means() function will draw samples of sample_size from the dataset 1000 times, calculate the means and plot the distribution.
+```{r}
+plot.sample.mean <- function(dataset, sample_size) {
+  samples <- replicate(1000, sample(dataset, sample_size))
+  sample_mean <- apply(samples, 2, mean)
+  hist(sample_mean, breaks = max(dataset), main = paste("Sample Size = ", sample_size), xlab = "Mean")
+}
+```
+
+- The seed can be any integer value and it doesn't matter what the value is, as long as it remains contant. Initializing the seed ensures that two different computers using the same seed will get identical samples from the random number generator.
+```{r}
+set.seed(12345)
+plot.sample.mean(diabetes_dataset$SkinThickness, sample_size = 2)
+plot.sample.mean(diabetes_dataset$SkinThickness, sample_size = 10)
+plot.sample.mean(diabetes_dataset$SkinThickness, sample_size = 30)
+plot.sample.mean(diabetes_dataset$SkinThickness, sample_size = 100)
+```
+
+- The distribution becomes closer and closer to being normally distributed as the sample size increases.
+
+## 5.Confidence Intervals:
+
+- A confidence interval is the mean of your estimate plus and minus the variation in that estimate.
+
+### a. Calculating a Confidence Interval From a Normal Distribution
+```{r}
+library(skimr)
+skim(diabetes_dataset$SkinThickness)
+total_num_data <-length(diabetes_dataset$SkinThickness)
+mean <-mean(diabetes_dataset$SkinThickness)
+sd <- sd(diabetes_dataset$SkinThickness)
+
+#95% confidence level used and wish to find the confidence interval.
+
+error_a <- qnorm(0.975)*sd/sqrt(total_num_data)
+left_a <- mean-error_a
+right_a <- mean+error_a
+
+cat("Width of confidence interval\nlower confidence limit: ",left_a,"\nupper catonfidence limit: ",right_a)
+
+
+```
+
+### b. Calculating a Confidence Interval From a t-distribution 
+```{r}
+#95% confidence level used and wish to find the confidence interval.
+error_b <- qt(0.975, df= total_num_data-1)*sd/sqrt(total_num_data)
+left_b <- mean - error_b
+right_b <- mean + error_b
+  
+cat("Width of confidence interval\nlower confidence limit: ",left_b,"\nupper catonfidence limit: ",right_b)
+
+```
+## 6.Transformation:
+As we see here Age column not normally distributed. It seems it is right skewed distribution.
+```{r}
+#first looking raw data qplot and summary of Age column
+qplot(x= Age, data = diabetes_dataset)
+summary(diabetes_dataset$Age)
+#then looking summary of the log10 function for Age column
+summary(log10(diabetes_dataset$Age))
+#log transformation
+df_Age <- data.frame(log10.age = log10(diabetes_dataset$Age))
+par(mfrow=c(1,1))
+hist(df_Age$log10.age)
+
+```
+
+## 7.Single t-test (Wilcoxon t-test):
+
+```{r}
+library(ggpubr)
+#data visualization
+ggboxplot(diabetes_dataset$Insulin,
+          ylab= "2-Hour serum insulin (mu U/ml)", xlab=FALSE, 
+          ggtheme = theme_minimal())
+
+skim(diabetes_dataset$Insulin)
+
+```
+
+
+#### a) Aim: 
+
+- The main aim in this test is the whether the median (m) of the sample is less than to the theoretical value (m0).
+
+#### b) Hypothesis and level of significance:
+
+- H0: m <= m0
+
+- H1: m > m0
+
+- level of significance : 0.05 with 95% confidence interval
+
+#### c) Assumption Check:
+
+- Assumption 1: Samples are independent
+
+- Assumption 2: Samples do not need to be drawn from a population with a normal distribution
+```{r}
+#visualizing if it is normally distributed
+qqnorm(diabetes_dataset$Insulin)
+qqline(diabetes_dataset$Insulin)
+```
+
+#### d) Indicate “which test you choose” “for what reason”:
+
+- I choose wilcoxon test to determine whether the median of the sample is equal to a known standard value (i.e. theoretical value). 
+
+- I want to know, if the median value of 2-hour serum insulin less than to the 35 U/ml (one-tailed test)?
+```{r}
+#computing one-sample Wilcoxon test
+res <- wilcox.test(diabetes_dataset$Insulin, mu=35, alternative= "less")
+res
+```
+
+#### e) Result:
+```{r}
+# print only the p-value
+res$p.value
+```
+
+- The p-value of the test is 1, which is greater than the significance level alpha = 0.05. 
+
+#### f) Conclusion:
+
+- We can accept the null hypothesis and conclude that the average U/ml of the insulin serum is less than 35 with a p-value = 1.
+
+#### g) What can be Type-1 and Type-2 error here?:
+
+- Decision: Do not reject H0
+
+- Actual situation:
+
+  - H0 True: No Error, probability 1-alpha
+  
+  - H0 False: Type 2 Error, probability beta
+
+## 8. Paired t-test:
+
+#### a) Aim: 
+
+- Since diabetes_dataset not have paired dependent before and after features, I add another sample dataset for paired t-test operations. I am using BloodPressure.csv for this practice. The dataset includes patients' blood pressure before and after treatment.
+
+- The aim is to compare the means between two related groups of samples. In this case, we have two values (i.e., pair of values) for the same samples. So, paired t-test can be used to compare the mean weights before and after treatment.
+
+```{r}
+#import your .csv file to your Global Environment
+bloodpressure_dataset <- read.csv("BloodPressure.csv", header = TRUE, sep= ",") #.csv as df
+attach(bloodpressure_dataset)
+names(bloodpressure_dataset)
+head(bloodpressure_dataset)
+```
+
+
+#### b) Hypothesis and level of significance:
+
+- My hypothesis is whether the mean difference (m) is equal to 0?(two-tailed test) We want to know, if there is any significant difference in the mean weights after treatment?
+
+- H0: m = 0
+
+- H1: m != 0 (different)
+
+```{r}
+#summary of dataset
+skim(bloodpressure_dataset)
+#visualizing dataset 
+boxplot(bloodpressure_dataset$Before, bloodpressure_dataset$After)
+
+
+# Plot paired data
+library(PairedData)
+pd <- paired(Before, After)
+plot(pd, type = "profile") + theme_bw()
+```
+
+
+#### c) Assumption Check:
+
+-  Are the two samples paired? : Yes, since the data have been collected from measuring twice the blood pressure of the same patients.
+
+- Is this a large sample? : No, because n < 30. Since the sample size is not large enough (less than 30), we need to check whether the differences of the pairs follow a normal distribution.
+
+- How to check the normality? : Shapiro-Wilk normality test as described at:
+
+  - Null hypothesis: the data are normally distributed
+  
+  - Alternative hypothesis: the data are not normally distributed
+```{r}
+# compute the difference
+d <- After - Before
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+- From the output, the p-value is greater than the significance level 0.05 implying that the distribution of the differences (d) are not significantly different from normal distribution. In other words, we can assume the normality.
+
+```{r}
+#paired samples t-test
+t.test(Before, After, mu=0, alt="two.sided", paired = T, conf.level = 0.95)
+
+```
+
+#### d) Result:
+
+- The p-value of the test is 0.0006986, which is less than the significance level alpha = 0.05. 
+
+#### e) Conclusion:
+
+- Because of p-value and after looking at the alternative hypothesis result, we can then reject null hypothesis and conclude that the average blood pressure of the patients before treatment is significantly different from the average blood pressure after treatment.
+
+## 9. Fisher’s exact test for count data:
+
+#### a) Aim:
+
+- Aim is looking at Glucose tolerances broken down by Outcome status. We can think of it as another approach to the t-test problem, this time looking at indicators of glucose tolerances instead of the actual glucose tolerance amounts.
+
+#### b) Hypothesis and level of significance:
+
+- Determine whether there is a statistically significant association between glucose tolerance amount and diabetes outcome. 
+
+- H0: the variables are independent, there is no relationship between the two categorical variables. Knowing the value of one variable does not help to predict the value of the other variable
+
+- H1: the variables are dependent, there is a relationship between the two categorical variables. Knowing the value of one variable helps to predict the value of the other variable
+
+```{r}
+#summarized in the contingency table 
+glucose.outcome.tbl <- with(diabetes_dataset, table(Glucose.cat, Outcome.cat))
+glucose.outcome.tbl
+#drawing mosaic plot
+mosaicplot(glucose.outcome.tbl,
+  main = "Mosaic plot",
+  color = TRUE
+)
+#fisher's exact test
+test <-fisher.test(glucose.outcome.tbl)
+test
+```
+
+#### c) Result:
+
+```{r}
+#retrieving p-value
+test$p.value
+```
+- From the output and from test$p.value we see that the p-value is less than the significance level of 5%. Like any other statistical test, if the p-value is less than the significance level, we can reject the null hypothesis. 
+
+#### d) Conclusion:
+
+- Rejecting the null hypothesis for the Fisher’s exact test of independence means that there is a significant relationship between the two categorical variables glucose tolerance amount and outcomes of being diabetes or not). Therefore, knowing the value of one variable helps to predict the value of the other variable.
+
+#### e) Odds Ratio:
+
+- The odds ratio tells us how many times more positive cases can happen than negative cases. Positives represent the pairs that are the same in both variables and negatives represent the pairs that aren’t the same in both variables. So we can say positives, glucose and outcome categorical variables both become as 0 or 1. Reverse is negative.
+```{r}
+#retrieving odds ratio
+test$estimate
+```
+
+
+## 10. ANOVA and Tukey Test:
+
+#### a) Aim:
+
+- First focus on the glucose tolerance and categorical pregnancies column, so keep only 2 variables
+
+- ANOVA used for explaining a quantitative variable based on a qualitative variable
+
+- The question which creates our aim: Is glucose tolerance amount between the 3 category of pregnancies diffrent or not?
+
+```{r}
+pregancies.glucose.df <- diabetes_dataset %>% dplyr::select(Pregnancies.cat, Glucose)
+
+summary(pregancies.glucose.df)
+#visualization for  variables
+ggplot(pregancies.glucose.df) +
+  aes(x = Pregnancies.cat, y = Glucose, color = Pregnancies.cat) +
+  geom_jitter() +
+  theme(legend.position = "none")
+```
+
+
+#### b) Hypothesis and level of significance:
+
+
+- H0: mu(high) = mu(normal) = mu(low) -> the 3 categories are equal in terms of Glucose
+
+- H1: at least one mean is different
+
+#### c) Assumption Check:
+
+
+- 1) All samples are independent, and collected in >2 independent categorical groups
+
+- 2) Dependent variable is continuous
+
+- 3) Normal distributions of each group, no major outliers
+
+- 4) Homogeneity of variances p-value should be higher then 0.05
+```{r}
+#grouping
+high <- subset(pregancies.glucose.df, Pregnancies.cat == "High")
+normal <- subset(pregancies.glucose.df, Pregnancies.cat == "Normal")
+low <- subset(pregancies.glucose.df, Pregnancies.cat == "Low")
+#checking normal distributions
+qqnorm(high$Glucose)
+qqline(high$Glucose)
+
+qqnorm(normal$Glucose)
+qqline(normal$Glucose)
+
+qqnorm(low$Glucose)
+qqline(low$Glucose)
+#homogeneity
+bartlett.test(Glucose ~ Pregnancies.cat, data=diabetes_dataset )
+#################################
+#one way ANOVA - Test if the means of the k populations are equal
+model1 = lm(Glucose ~ Pregnancies.cat, data = diabetes_dataset) #lm: linear model
+anova(model1)
+#Post-hoc test TukeyHSD - Test which of the categories have different means
+TukeyHSD(aov(model1))
+##################################
+#data visualization
+ggplot(diabetes_dataset, aes(x=Pregnancies.cat, y=Glucose))+
+  geom_boxplot(fill="grey80", colour="black")+
+  scale_x_discrete()+xlab("Preganacies Categories")+
+  ylab("Glucose Tolerance")
+```
+
+
+#### d) Result of ANOVA:
+
+- Since, p-value = 0.5329 > 0.05 homogeneity bartlett test, we can do ANOVA. 
+
+- In ANOVA our F value = 7.6835 and p-value=0.0004968 ***. p-value is much smaller then 0.05 which means we can reject null hypothesis.
+
+#### e) Conclusion of ANOVA:
+
+- Rejecting indicates that there is a difference between three categories of pregnancies. However we don't know which one is which. For this we should run post-hoc TukeyHSD.
+
+#### f) Result of Tukey:
+
+- When we look at the tukey test p values for every categories for pregnancy comparisons, only p-value of Low-Normal higher then 0.05 which means glucose tolerance amounts same for low and normal pregnancies.
+For High pregnancy comparisons, glucose tolerance amounts are different for one another.
+
+#### g) Conclusion of Tukey:
+
+- After doing tukey test  and visualizing categorical datas we can see clearly that High pregnancy category significantly different from normal and low.
+
+## 11. Multiple Linear Regression:
+
+#### a) Aim: 
+
+- My aim is to find prediction of Pregnancies with multiple predictor values(columns).
+
+#### b) Regrassion Equasion:
+
+- With three predictor variables (x), the prediction of y is expressed by the following equation:
+
+> y = b0 + b1*x1 + b2*x2 + b3*x3
+
+- The “b” values are called the regression weights (or beta coefficients). They measure the association between the predictor variable and the outcome. “b_j” can be interpreted as the average effect on y of a one unit increase in “x_j”, holding all other predictors fixed.
+
+#### c) Hypothesis and level of significance:
+
+- I want to build a model for estimating pregnancies based multiple variables that I am going to be select with step function.
+
+- Full model show that Multiple R-squared:  0.7481 and p-value: < 0.00000000000000022. So we can see this model is significant model.
+
+```{r}
+names(diabetes_dataset)
+#first look at the full model
+mlr = lm(Pregnancies ~ ., data = diabetes_dataset)
+summary(mlr)
+#FOR SMALLER MODEL
+#step function
+model.final = step(mlr) #looking for both directions
+
+```
+### d) Find the Best Model:
+```{r}
+summary(model.final)
+```
+
+
+- My AIC value after applied step function is AIC=822.43 . The smaller AIC value is better. Finally in our model we use; 
+
+> Pregnancies ~ Glucose + SkinThickness + Age + Outcome + Pregnancies.cat
+
+### e) Assumption Check:
+
+1. Using step predicted model
+```{r}
+mlr1 = lm(formula = Pregnancies ~ Glucose + SkinThickness + Age + Outcome + 
+    Pregnancies.cat, data = diabetes_dataset)
+summary(mlr1)
+```
+
+2. The independent variables are not highly correlated with each other(scatter plotting for linearity)
+```{r}
+plot(mlr1)
+abline(mlr1, col="red")
+```
+
+### f) Result:
+
+- In our example, it can be seen that p-value of the F-statistic is < 2.2e-16, which is highly significant. This means that, at least, one of the predictor variables is significantly related to the outcome variable.
+
+- To see which predictor variables are significant, you can examine the coefficients table, which shows the estimate of regression beta coefficients and the associated t-statitic p-values:
+```{r}
+sum_coef<-summary(mlr1)$coefficient
+sum_coef
+```
+
+- As the Glucose and Pregnancies.cat variables are not significant, it is possible to remove it from the model:
+```{r}
+mlr1.1  <- lm(formula = Pregnancies ~ SkinThickness + Age + Outcome, data = diabetes_dataset)
+summary(mlr1.1)
+#conf.int extraction
+confint(mlr1.1)
+```
+
+
+### g) Conclusion:
+
+- Finally, our mlr1.1 equation can be written as follow: Pregnancies = -1.19 + 0.148*Age + 0.713*Outcome + -0.006*SkinThickness
+
+### h) Prediction:
+
+- Main assumption is to checking how significant this step predicted model is. I checked that with adding different variables.
+```{r}
+mlr1 = lm(formula = Pregnancies ~ Glucose + SkinThickness + Age + Outcome + 
+    Pregnancies.cat, data = diabetes_dataset)
+summary(mlr1)
+
+mlr2 = lm(formula = Pregnancies ~ Glucose + SkinThickness + Age + Outcome + 
+    Pregnancies.cat+BMI, data = diabetes_dataset)
+summary(mlr2)
+
+```
+
+
+## 12. Generalized Linear Model
+
+- Creating GLM with binary data using glm() function. And by continuing with Trees data set.
+
+- The glm function works mostly the same as the lm function, and uses the same type of formula: dependent ~ independent1 + independent2 + .... The main difference is that we’ll need to specify the error distribution family and link function with the family argument. For logistic regression, we need to use the binomial family (which by default uses the canonical logit link function). To interpret the model we use the tab_model function from the sjPlot package.
+
+```{r}
+library(sjPlot)
+library(lme4) 
+m = glm(Outcome ~ Age + DiabetesPedigreeFunction, family = binomial, data = diabetes_dataset)
+tab_model(m)
+```
+
+- In the current model the Odds Ratios for DiabetesPedigreeFunction (2.93) indicate that for every unit increase of DiabetesPedigreeFunction, the odds are multiplied by 2.93.
+
+- If the value is between 0 and 1, the effect is negative, because the odds decrease. If the value is higher than 1, the effect is positive.
+
+- To evaluate model fit, you can compare models using the anova function. For example, here we first make a base model that does not contain any independent variables, and also make a second model with the BMI information included. We then compare how the model fit changes.
+
+```{r}
+m_base = glm(Outcome ~ 1, family = binomial, data = diabetes_dataset)
+m1 = glm(Outcome ~ Age + DiabetesPedigreeFunction, family = binomial, data = diabetes_dataset)
+m2 = glm(Outcome ~ Age + DiabetesPedigreeFunction + BMI, family = binomial, data = diabetes_dataset)
+anova(m_base, m1,m2, test="Chisq")
+#table 
+tab_model(m1,m2)
+```
+
+- . Finally, to illustrate how fitting a glm is different from using a regular lm, we can plot the regression line for the DiabetesPedigreeFunction. For this we can use the amazing and extremely versatile plot_model function from the sjPlot package. Here we plot the prediction of the model for different values of DiabetesPedigreeFunction.
+
+```{r}
+plot_model(m2, type = 'pred', terms = 'DiabetesPedigreeFunction')
+```
+
+- You can also produce this plot for all independent variables in a grid.
+```{r}
+p = plot_model(m2, type = 'pred')     ## creates a list of plots
+plot_grid(p)
+```
+
